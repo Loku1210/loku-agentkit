@@ -17,7 +17,7 @@ See [INSTALL.md](INSTALL.md). The files are plain Markdown and shell scripts; in
 
 ## Originality statement
 
-The Direct/Loop/Workflow/Graph routing framework, clarification method, task-card contract, acceptance-anchor method, memory/archive protocols, and packaged prompt templates are original material released by `<PROJECT_AUTHOR>`. Third-party product names are used only to describe interoperability where necessary; no third-party skill catalog or proprietary skill bundle is included.
+The Direct/Loop/Workflow/Graph routing framework, clarification method, task-card contract, acceptance-anchor method, memory/archive protocols, and packaged prompt templates are original material released by Loku1210. Skill files follow the portable `SKILL.md` convention.
 
 ## License
 
