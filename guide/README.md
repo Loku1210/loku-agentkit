@@ -4,6 +4,9 @@ This guide turns requests into bounded, testable work. It separates prompt desig
 
 ## Start here
 
+For a complete small example before reading the protocols, open
+`../examples/happy-path/REQUEST.md` and `../examples/happy-path/EXPECTED_TASK.md`.
+
 1. Clarify purpose, inputs, write boundaries, exclusions, and success evidence.
 2. Choose Direct, Loop, Workflow, or Graph with `docs/AGENT_ROUTING.md`.
 3. Select a compatible target agent with `docs/TARGET_AGENT_ROUTING.md`.
