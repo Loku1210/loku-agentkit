@@ -1,11 +1,13 @@
 ---
 name: defer-task
-description: Use when a user explicitly asks to schedule, list, inspect, or cancel a delayed local agent task on macOS.
+description: Use when a user explicitly asks to schedule, list, inspect, or cancel a delayed local agent task.
 ---
 
 # defer-task
 
-> **macOS MVP.** Restart-safe scheduling uses a per-task launchd LaunchAgent. Windows Task Scheduler and Linux systemd backends remain roadmap items.
+> **Validation status:** macOS launchd is natively exercised. Linux `systemd-user`
+> and Windows `windows-task-scheduler` adapters are static/unit-tested but require
+> native-host validation before making runtime support claims.
 
 Schedule a user-approved shell command for later execution without expanding its authority. Standard permission prompts still apply when the command runs.
 
@@ -36,7 +38,7 @@ The state root is `<STATE_DIR>`. It defaults to `~/.local/state/loku-defer` and 
 
 ## Scheduling flow
 
-1. Confirm the host is macOS and `<PROJECT_ROOT>` is an existing, user-authorized directory.
+1. Confirm the host platform, scheduler availability, validation status, and that `<PROJECT_ROOT>` is an existing, user-authorized directory.
 2. Require a non-empty command and a positive delay such as `30s`, `90m`, or `2h30m`.
 3. Freeze the exact command, working directory, label, and scheduled time in the confirmation.
 4. Run `deferctl.py schedule`. Do not manually create a timer or interpolate the command into AppleScript.
@@ -49,6 +51,12 @@ The state root is `<STATE_DIR>`. It defaults to `~/.local/state/loku-defer` and 
 1. **launchd:** creates `loku.defer.<TASK_ID>.plist` and calls `launchctl load`. Delays of at least one minute use `StartCalendarInterval`; sub-minute delays use `StartInterval`. The runner unloads and removes its one-shot scheduling artifacts after firing. This is the macOS restart-safe backend.
 2. **at:** used when launchd is unavailable or rejects the job. Persistence depends on the host's enabled `at` service.
 3. **osascript + sleep:** opens the runner in Terminal after an in-process sleep. The task is explicitly recorded with `restart_safe: false` and is lost if the timer process or Mac restarts.
+4. **systemd-user (Linux):** uses `systemd-run --user` with an exact argument list and
+   `systemctl --user` for status/cancel. Command generation and parsing are unit-tested;
+   native Linux execution is not validated in this release.
+5. **windows-task-scheduler (Windows):** writes a `.cmd` runner and uses `schtasks`
+   Create/Query/Delete. Command generation and state behavior are unit-tested;
+   native Windows execution is not validated in this release.
 
 Tests inject a fake backend and must never load a real LaunchAgent. A real smoke test requires explicit user authorization and must be canceled and cleaned up afterward.
 
@@ -67,10 +75,10 @@ Task ID: <TASK_ID>
 Scheduled time: <LOCAL_TIMESTAMP>
 Task: <EXACT_SHELL_COMMAND>
 Working directory: <PROJECT_ROOT>
-Backend: <launchd|at|osascript-sleep>
+Backend: <launchd|at|osascript-sleep|systemd-user|windows-task-scheduler>
 Restart-safe: <true|false>
 State: <STATE_DIR>/defer-tasks.json
-Runner: <STATE_DIR>/runners/<TASK_ID>.sh
+Runner: <STATE_DIR>/runners/<TASK_ID>.sh (Windows: <TASK_ID>.cmd)
 LaunchAgent: <LAUNCH_AGENTS_DIR>/loku.defer.<TASK_ID>.plist
 Permission behavior: standard interactive permissions
 ```
@@ -80,4 +88,5 @@ Permission behavior: standard interactive permissions
 - launchd tasks survive logout/restart as LaunchAgents, but the Mac must be powered on for execution; calendar jobs normally run when the machine next wakes.
 - The osascript fallback requires macOS Automation permission and the Mac to stay awake.
 - The requested agent or shell CLI must already be installed and authenticated.
-- Windows Task Scheduler and Linux systemd/at-native backends are not implemented as supported platform backends in this MVP.
+- Linux and Windows adapters require native-host smoke tests before their status can be
+  upgraded from static/unit-tested to native validated.
