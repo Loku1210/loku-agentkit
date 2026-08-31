@@ -84,6 +84,91 @@ class LaunchdPlistTests(unittest.TestCase):
         self.assertNotIn("StartCalendarInterval", mapping)
 
 
+class CrossPlatformBackendTests(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        self.task = {
+            "id": "task001",
+            "fire_time": "2026-09-02T14:37:00+08:00",
+            "runner_path": "/tmp/state/runners/task001.sh",
+        }
+
+    def fake_run(self, args, **kwargs):
+        self.calls.append((args, kwargs))
+        return type("Result", (), {"returncode": 0, "stdout": "Ready", "stderr": ""})()
+
+    def test_systemd_schedule_uses_user_timer_and_exact_runner(self):
+        backend = deferctl.SystemdBackend(
+            systemd_run="/usr/bin/systemd-run",
+            systemctl="/usr/bin/systemctl",
+            platform="linux",
+            command_runner=self.fake_run,
+        )
+
+        result = backend.schedule(self.task, Path("/unused"))
+
+        self.assertEqual(result["backend"], "systemd-user")
+        self.assertTrue(result["restart_safe"])
+        self.assertEqual(result["backend_unit"], "loku-defer-task001")
+        self.assertEqual(
+            self.calls[0][0],
+            [
+                "/usr/bin/systemd-run",
+                "--user",
+                "--unit",
+                "loku-defer-task001",
+                "--on-calendar",
+                "2026-09-02T14:37:00+08:00",
+                "/bin/sh",
+                "/tmp/state/runners/task001.sh",
+            ],
+        )
+
+    def test_schtasks_schedule_quotes_windows_runner_without_shell(self):
+        task = dict(self.task, runner_path=r"C:\State Dir\runners\task001.cmd")
+        backend = deferctl.SchtasksBackend(
+            schtasks=r"C:\Windows\System32\schtasks.exe",
+            platform="win32",
+            command_runner=self.fake_run,
+        )
+
+        result = backend.schedule(task, Path("C:/unused"))
+
+        self.assertEqual(result["backend"], "windows-task-scheduler")
+        args = self.calls[0][0]
+        self.assertEqual(args[:4], [r"C:\Windows\System32\schtasks.exe", "/Create", "/F", "/SC"])
+        self.assertIn("ONCE", args)
+        self.assertIn(r"C:\State Dir\runners\task001.cmd", args)
+        self.assertNotIn("shell", self.calls[0][1])
+
+    def test_auto_backend_selects_only_current_platform_candidates(self):
+        linux = deferctl.AutoBackend(platform="linux")
+        windows = deferctl.AutoBackend(platform="win32")
+
+        self.assertEqual([item.name for item in linux.candidates], ["systemd-user", "at"])
+        self.assertEqual([item.name for item in windows.candidates], ["windows-task-scheduler"])
+
+    def test_windows_manager_writes_cmd_runner_for_task_scheduler(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cwd = root / "project"
+            cwd.mkdir()
+            backend = FakeBackend()
+            manager = deferctl.DeferManager(
+                state_dir=root / "state",
+                launch_agents_dir=root / "scheduler",
+                backend=backend,
+                platform="win32",
+                id_factory=lambda: "windows-task",
+            )
+
+            task = manager.schedule("30s", cwd, "echo done")
+
+            runner = Path(task["runner_path"])
+            self.assertEqual(runner.suffix, ".cmd")
+            self.assertTrue(runner.read_text(encoding="utf-8").startswith("@echo off"))
+
+
 class ManagerStateMachineTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()

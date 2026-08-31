@@ -201,6 +201,158 @@ class AtBackend:
         return any(line.split() and line.split()[0] == str(job_id) for line in result.stdout.splitlines())
 
 
+class SystemdBackend:
+    """Restart-safe Linux user timer created with systemd-run."""
+
+    name = "systemd-user"
+    restart_safe = True
+
+    def __init__(
+        self,
+        systemd_run: Optional[str] = None,
+        systemctl: Optional[str] = None,
+        platform: Optional[str] = None,
+        command_runner: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        self.systemd_run = systemd_run or shutil.which("systemd-run")
+        self.systemctl = systemctl or shutil.which("systemctl")
+        self.platform = platform or sys.platform
+        self.command_runner = command_runner or subprocess.run
+
+    def available(self) -> bool:
+        return self.platform.startswith("linux") and bool(self.systemd_run and self.systemctl)
+
+    @staticmethod
+    def unit_name(task: Dict[str, Any]) -> str:
+        return "loku-defer-{}".format(task["id"])
+
+    def schedule(self, task: Dict[str, Any], plist_path: Path) -> Dict[str, Any]:
+        if not self.available():
+            raise BackendUnavailableError("systemd user scheduling is unavailable")
+        unit = self.unit_name(task)
+        result = self.command_runner(
+            [
+                str(self.systemd_run),
+                "--user",
+                "--unit",
+                unit,
+                "--on-calendar",
+                task["fire_time"],
+                "/bin/sh",
+                task["runner_path"],
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise BackendError("systemd-run failed: {}".format(detail or result.returncode))
+        return {
+            "backend": self.name,
+            "backend_unit": unit,
+            "restart_safe": self.restart_safe,
+        }
+
+    def cancel(self, task: Dict[str, Any]) -> None:
+        if not self.available():
+            return
+        unit = task.get("backend_unit") or self.unit_name(task)
+        self.command_runner(
+            [str(self.systemctl), "--user", "stop", str(unit)],
+            capture_output=True,
+            text=True,
+        )
+
+    def is_active(self, task: Dict[str, Any]) -> bool:
+        if not self.available():
+            return False
+        unit = task.get("backend_unit") or self.unit_name(task)
+        result = self.command_runner(
+            [str(self.systemctl), "--user", "is-active", str(unit)],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0 and result.stdout.strip() in {"active", "activating"}
+
+
+class SchtasksBackend:
+    """Windows Task Scheduler adapter; native execution requires a Windows host."""
+
+    name = "windows-task-scheduler"
+    restart_safe = True
+
+    def __init__(
+        self,
+        schtasks: Optional[str] = None,
+        platform: Optional[str] = None,
+        command_runner: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        self.schtasks = schtasks or shutil.which("schtasks")
+        self.platform = platform or sys.platform
+        self.command_runner = command_runner or subprocess.run
+
+    def available(self) -> bool:
+        return self.platform == "win32" and bool(self.schtasks)
+
+    @staticmethod
+    def task_name(task: Dict[str, Any]) -> str:
+        return "LokuDefer\\{}".format(task["id"])
+
+    def schedule(self, task: Dict[str, Any], plist_path: Path) -> Dict[str, Any]:
+        if not self.available():
+            raise BackendUnavailableError("Windows Task Scheduler is unavailable")
+        fire_time = datetime.fromisoformat(task["fire_time"]).astimezone()
+        task_name = self.task_name(task)
+        result = self.command_runner(
+            [
+                str(self.schtasks),
+                "/Create",
+                "/F",
+                "/SC",
+                "ONCE",
+                "/TN",
+                task_name,
+                "/TR",
+                task["runner_path"],
+                "/SD",
+                fire_time.strftime("%m/%d/%Y"),
+                "/ST",
+                fire_time.strftime("%H:%M"),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise BackendError("schtasks create failed: {}".format(detail or result.returncode))
+        return {
+            "backend": self.name,
+            "backend_task_name": task_name,
+            "restart_safe": self.restart_safe,
+        }
+
+    def cancel(self, task: Dict[str, Any]) -> None:
+        if not self.available():
+            return
+        task_name = task.get("backend_task_name") or self.task_name(task)
+        self.command_runner(
+            [str(self.schtasks), "/Delete", "/F", "/TN", str(task_name)],
+            capture_output=True,
+            text=True,
+        )
+
+    def is_active(self, task: Dict[str, Any]) -> bool:
+        if not self.available():
+            return False
+        task_name = task.get("backend_task_name") or self.task_name(task)
+        result = self.command_runner(
+            [str(self.schtasks), "/Query", "/TN", str(task_name)],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+
+
 class SleepOsaBackend:
     name = "osascript-sleep"
     restart_safe = False
@@ -265,17 +417,30 @@ class SleepOsaBackend:
 
 
 class AutoBackend:
-    """Try the macOS backends in safety order."""
+    """Select restart-aware scheduler backends for the current platform."""
 
     name = "auto"
     restart_safe = False
 
-    def __init__(self, candidates: Optional[Iterable[Any]] = None) -> None:
-        self.candidates = list(candidates or (LaunchdBackend(), AtBackend(), SleepOsaBackend()))
+    def __init__(
+        self,
+        candidates: Optional[Iterable[Any]] = None,
+        platform: Optional[str] = None,
+    ) -> None:
+        self.platform = platform or sys.platform
+        if candidates is not None:
+            selected = list(candidates)
+        elif self.platform == "darwin":
+            selected = [LaunchdBackend(), AtBackend(), SleepOsaBackend()]
+        elif self.platform.startswith("linux"):
+            selected = [SystemdBackend(platform=self.platform), AtBackend()]
+        elif self.platform == "win32":
+            selected = [SchtasksBackend(platform=self.platform)]
+        else:
+            selected = []
+        self.candidates = selected
 
     def schedule(self, task: Dict[str, Any], plist_path: Path) -> Dict[str, Any]:
-        if sys.platform != "darwin":
-            raise BackendUnavailableError("deferctl scheduling is currently macOS-only")
         failures = []
         for backend in self.candidates:
             if hasattr(backend, "available") and not backend.available():
@@ -285,7 +450,8 @@ class AutoBackend:
                 return backend.schedule(task, plist_path)
             except (BackendUnavailableError, BackendError) as exc:
                 failures.append("{}: {}".format(backend.name, exc))
-        raise BackendUnavailableError("no scheduling backend succeeded ({})".format("; ".join(failures)))
+        detail = "; ".join(failures) or "no backend is defined for {}".format(self.platform)
+        raise BackendUnavailableError("no scheduling backend succeeded ({})".format(detail))
 
     def _matching(self, task: Dict[str, Any]) -> Optional[Any]:
         name = task.get("backend")
@@ -310,6 +476,7 @@ class DeferManager:
         now: Optional[Callable[[], datetime]] = None,
         sleeper: Optional[Callable[[float], None]] = None,
         id_factory: Optional[Callable[[], str]] = None,
+        platform: Optional[str] = None,
     ) -> None:
         self.state_dir = Path(state_dir or default_state_dir()).expanduser().resolve()
         self.launch_agents_dir = Path(
@@ -317,7 +484,8 @@ class DeferManager:
         ).expanduser().resolve()
         self.registry_path = self.state_dir / REGISTRY_NAME
         self.runners_dir = self.state_dir / "runners"
-        self.backend = backend or AutoBackend()
+        self.platform = platform or sys.platform
+        self.backend = backend or AutoBackend(platform=self.platform)
         self.now = now or (lambda: datetime.now().astimezone())
         self.sleeper = sleeper or time.sleep
         self.id_factory = id_factory or (lambda: uuid.uuid4().hex[:12])
@@ -361,7 +529,8 @@ class DeferManager:
                 temp_path.unlink()
 
     def _runner_path(self, task_id: str) -> Path:
-        return self.runners_dir / "{}.sh".format(task_id)
+        suffix = ".cmd" if self.platform == "win32" else ".sh"
+        return self.runners_dir / "{}{}".format(task_id, suffix)
 
     def _plist_path(self, task_id: str) -> Path:
         return self.launch_agents_dir / "loku.defer.{}.plist".format(task_id)
@@ -389,7 +558,10 @@ class DeferManager:
             "--launch-agents-dir",
             str(self.launch_agents_dir),
         ]
-        content = "#!/bin/sh\nexec {}\n".format(" ".join(shlex.quote(item) for item in argv))
+        if self.platform == "win32":
+            content = "@echo off\r\n{}\r\n".format(subprocess.list2cmdline(argv))
+        else:
+            content = "#!/bin/sh\nexec {}\n".format(" ".join(shlex.quote(item) for item in argv))
         runner_path.write_text(content, encoding="utf-8")
         runner_path.chmod(0o700)
         return runner_path
