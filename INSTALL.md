@@ -11,7 +11,7 @@ Copy or symlink one directory from `skills/` into the skill directory supported 
 Example layout:
 
 ```text
-<AGENT_SKILLS_DIR>/
+agent-skills/
 └── guide/
     └── SKILL.md
 ```
@@ -26,4 +26,4 @@ From the repository root:
 bash guide/scripts/validate-guide.sh
 ```
 
-Before using a shell-based skill, read its safety section and replace placeholders such as `<PROJECT_ROOT>` with an explicitly authorized path.
+Before using a shell-based skill, read its safety section and replace every documented sample path with an explicitly authorized project path.
