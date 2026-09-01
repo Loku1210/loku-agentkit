@@ -22,6 +22,13 @@ class DocsContractTests(unittest.TestCase):
         self.assertIn("windows-task-scheduler", text)
         self.assertNotIn("are not implemented", text)
 
+    def test_readme_platform_claim_matches_compatibility_matrix(self):
+        """Catches the entry document contradicting the validated platform matrix."""
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("macOS-only", text)
+        self.assertIn("static/unit-tested", text)
+        self.assertIn("docs/COMPATIBILITY.md", text)
+
 
 if __name__ == "__main__":
     unittest.main()

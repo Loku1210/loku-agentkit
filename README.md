@@ -7,7 +7,9 @@
 - `guide/`: routing, memory, archive, prompt, and skill-lifecycle methods.
 - `skills/guide/`: `loku:guide`, the request-to-prompt router.
 - `skills/coop/`: a controller–executor collaboration protocol.
-- `skills/defer-task/`: a macOS-only deferred local task MVP.
+- `skills/defer-task/`: a deferred local task MVP. macOS launchd is natively
+  exercised; the Linux and Windows adapters are static/unit-tested only, with no
+  native-host validation. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 - `skills/handoff-compact/`: safe compaction for append-only handoff logs.
 - `skills/overnight/`: bounded unattended exploration.
 
