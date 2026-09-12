@@ -3,15 +3,15 @@ name: overnight
 description: Use when a user requests bounded unattended exploration, verification, or reporting while unavailable and supplies explicit write, network, download, and stop boundaries.
 ---
 
-# Bounded unattended exploration
+# Bounded unattended work (explore or finish a long task)
 
-Continue safe, traceable work while the user is unavailable without expanding authorization.
+Continue safe, traceable work while the user is asleep or away, without expanding authorization. Two modes: **explore** (brainstorm and vet research candidates or ideas) and **long task** (carry a single long-running job toward completion). Ground the goal in what the user has already stated — their standing requirements and global / project memory — confirm the boundaries once, then work on your own.
 
 ## Startup gate
 
 Confirm up to three missing items in one batch:
 
-1. goal and exclusion criteria;
+1. goal and exclusion criteria, grounded in the user's standing requirements and global / project memory, and whether this is an **explore** run or a **long-task** run;
 2. authorized write directory, defaulting only to `<PROJECT_ROOT>/overnight-work/` when the user has authorized `<PROJECT_ROOT>`;
 3. network/download allowance, maximum download size, and whether new isolated environments are allowed.
 
@@ -35,6 +35,14 @@ At the top of the report, freeze allowed writes, forbidden actions, network allo
 - Do not run unreviewed hooks, extensions, or installation scripts.
 - Install a pinned dependency only inside an explicitly authorized isolated environment; otherwise write an installation plan.
 - On network failure, unclear identity, uncertain license, download overflow, or need for offline validation, record a blocker and move to another safe candidate.
+
+## Continuation with defer-task
+
+A single unattended run can be interrupted — an agent's usage window, a machine sleep, or a job longer than one session. To keep going without a human present:
+
+1. Checkpoint the current state and the exact resume command inside the authorized directory.
+2. Use `defer-task` to schedule that resume command, and to schedule the morning summary write-up, so work continues after the interruption within the **same frozen scope**.
+3. A deferred resume may only re-enter the already-authorized boundaries; it never widens permissions, and the safety boundary below still applies at every resumption.
 
 ## Morning deliverable
 

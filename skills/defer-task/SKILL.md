@@ -11,6 +11,14 @@ description: Use when a user explicitly asks to schedule, list, inspect, or canc
 
 Schedule a user-approved shell command for later execution without expanding its authority. Standard permission prompts still apply when the command runs.
 
+## When to use it
+
+A manual countdown task executor for **continuation**, not a way to gain new authority:
+
+- **Resume after an agent hits its usage window.** Agent sessions often pause at a ~5-hour usage limit that interrupts long work. Schedule the resume command to fire after the window resets, so the task continues on its own.
+- **Continue after another agent finishes.** When a second agent is still working and you must run only once it is done, estimate the remaining time and schedule the follow-up. This is a **time-based countdown, not event-based waiting** — pick a delay that safely clears the other job.
+- **Off-hours / delayed runs.** Queue a long or inconvenient command to run later in an authorized directory, then track it with `list` / `status` / `cancel`.
+
 ## Command-line manager
 
 Use the stdlib-only `deferctl.py` beside this file:

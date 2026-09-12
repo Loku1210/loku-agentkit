@@ -1,11 +1,11 @@
 ---
 name: coop
-description: Use when a controller agent may delegate a short, bounded, objectively verifiable task to an executor agent and then independently review the result.
+description: Use when different local AI agents (e.g. Claude Code, Codex) should collaborate on one job — one drafts, another independently reviews — through a bounded, objectively verifiable maker–checker loop.
 ---
 
-# Controller–executor cooperation
+# Cross-agent cooperation (controller × executor)
 
-Use a maker–checker loop without granting either agent broader authority than the user supplied.
+Let different **local AI agents from different vendors** work on one job together. One agent (the controller) clarifies, plans, and defines a bounded task card; another agent — deliberately a **different model / brand** (for example Codex drafts, Claude Code reviews) — runs it and returns a result. The controller then **independently reviews** that result and iterates over several rounds. Using a second, independent model to check the first lowers the error rate and raises final quality, without granting either agent broader authority than the user supplied.
 
 ## Optional mode state
 
@@ -30,6 +30,15 @@ Mode state is only a preference signal. It does not authorize delegation, file w
 ## Delegation gate
 
 Delegate only when the task is short, atomic, self-contained, bounded by explicit paths, and objectively verifiable. Keep it with the controller or provide a manual continuation prompt when it requires extensive conversation context, long-form judgment, slow external I/O, broad project access, or several tightly coupled phases.
+
+## Dispatch mode: background run vs. manual paste
+
+Decide per task how the other agent is invoked:
+
+- **Background terminal run** — when a reviewed `<COOP_WRAPPER>` (or a platform-native delegation tool) can invoke the other agent headlessly in a small authorized working directory, and the task is short, bounded, and objectively verifiable. The controller dispatches, captures the process handle and exit code, then reviews the returned artifact.
+- **Manual paste to a client** — when the job needs a rich client session, long conversation context, interactive tools, or a capability the headless CLI lacks. Do **not** force it into the background; output a complete, self-contained prompt and tell the user which client / agent to paste it into, then review what comes back.
+
+Pick the lightest mode that still lets the controller independently verify the result. Iterate: draft → independent review by a different-brand agent → apply feedback → re-check, until the acceptance checks pass.
 
 ## Execution adapter
 

@@ -50,18 +50,24 @@
 
 ## 其余 4 个 skill
 
-### 🤝 `coop` —— 双 agent 分工（控制者 × 执行者）
-**功能**：一个"控制者"agent 负责澄清、规划、写任务卡、派活、**独立复查**结果；一个"执行者"
-agent 只在任务卡边界内干活。谁都不会因此获得比你授权更大的权限。
-**优势**：maker–checker 双人校验，既能并行提速，又不放大风险；只把**短、原子、可客观验证**的
-任务外派，判断类 / 长上下文的活儿留在控制者手里。
-**上手**：`coop on` 开启 → `coop run <任务>` 派一个边界清晰的小任务 → 控制者看实际 diff 跑验收 →
-`coop off` 关闭。（模式开关只是偏好信号，不授权任何写入 / 删除 / 外发。）
+### 🤝 `coop` —— 让不同品牌 AI 互相协作、互相审查
+**功能**：让**不同厂商的本地 AI agent**（如 Claude Code、Codex）协力完成一件事：一个当"控制者"
+澄清、规划、写任务卡、派活；另一个（**刻意换一个模型 / 品牌**，例如 Codex 起草、Claude Code 审查）
+执行并返回结果，控制者再**独立复查**并多轮迭代。
+**优势**：用第二个独立模型审第一个，**降低犯错率、提高终产品质量**；只外派**短、原子、可客观验证**的
+任务，判断类留给控制者，谁都不会获得比你授权更大的权限。
+**派发方式（按任务判断）**：能被无头 CLI 在小目录里安全跑的 → **后台终端直接运行**，回收进程句柄和
+产物后复查；需要富客户端会话 / 长上下文的 → 不硬塞后台，而是**给出完整提示词、建议你手动贴进对应
+客户端**，再把结果拿回来复查。
+**上手**：`coop on` → `coop run <任务>` → 控制者看实际 diff 跑验收 → `coop off`。（开关只是偏好信号，
+不授权任何写入 / 删除 / 外发。）
 
-### ⏰ `defer-task` —— 延迟的本地任务
-**功能**：把一条**你已批准**的 shell 命令安排到稍后执行，不扩大它的权限（命令真正运行时仍走
-正常授权提示）。用随附的 `deferctl.py`（仅标准库）管理。
-**优势**：额度 / 时间不凑手时，先排期，到点自动在指定目录跑；全程可 list / status / cancel 追踪。
+### ⏰ `defer-task` —— 定时接续的本地任务执行器
+**功能**：把一条**你已批准**的 shell 命令安排到稍后自动执行（命令真正运行时仍走正常授权提示）。
+用随附的 `deferctl.py`（仅标准库）管理。
+**为什么需要**：① agent 常在 **~5 小时用量上限**处被打断 —— 排一个倒计时，等窗口重置后自动续跑；
+② 另一个 agent 还在跑、要等它完成再接手 —— 按估算时间排倒计时（**基于时间倒计时、非事件监听**，
+留足余量）；③ 把长 / 现在不方便跑的命令排到稍后。全程 list / status / cancel 可追踪，不扩大命令权限。
 **上手**：
 ```bash
 python3 <SKILL_DIR>/deferctl.py schedule --delay 2h30m --cwd <项目目录> --cmd '<命令>' --label '<备注>'
@@ -75,13 +81,13 @@ python3 <SKILL_DIR>/deferctl.py list
 **优势**：日志瘦身但不丢信息——决策、证据边界、未决事项、可追溯性全部保留。
 **上手**：`handoff-compact --dir=<项目目录> --keep=5 --threshold=120`（低于阈值直接跳过）。
 
-### 🌙 `overnight` —— 有边界的无人值守探索
-**功能**：你不在时，让 agent 在**明确的写入 / 网络 / 下载 / 停止边界**内，继续做安全、可追溯的
-探索、验证与报告；早上给你一份成果 + 阻塞清单。
-**优势**：先冻结允许 / 禁止的操作，再干活；生成候选 → 查重与来源核验 → 预注册对比 → 轻量实现，
-每一步留输入 / 命令 / 输出路径。绝不越权提交、发布、删除或装系统级依赖。
-**上手**：发起时一次性确认 3 件事（目标与排除项 / 授权写入目录 / 网络与下载额度），其余按只读
-处理。
+### 🌙 `overnight` —— 睡觉 / 离开时，让 AI 安全地继续干
+**功能**：依据你**已声明的目标和全局 / 项目记忆**，在你睡觉或离开时做**两类**工作之一：**探索**
+（brainstorm 选题、验证候选）或**跑完一个长任务**。问清权限和目的后自动开工，早上给你成果 + 阻塞清单。
+**优势**：先冻结允许 / 禁止的操作与网络 / 下载额度再干活；候选 → 查重与来源核验 → 预注册对比 →
+轻量实现，每步留输入 / 命令 / 输出路径。被 **5h 上限 / 关机 / 长耗时**打断时，**自动用 `defer-task`
+在同一冻结边界内排期续跑**，并生成晨间报告；**绝不越权提交、发布、删除或安装重要文件**。
+**上手**：发起时一次性确认 3 件事（目标与排除项 / 授权写入目录 / 网络与下载额度），其余按只读处理。
 
 ---
 
@@ -161,22 +167,32 @@ Invoke it by sending the message above to an agent that has `loku:guide` install
 
 ## The other 4 skills
 
-### 🤝 `coop` — two-agent division of labor (controller × executor)
-**What:** a *controller* agent clarifies, plans, writes the task card, dispatches, and
-**independently reviews** the result; an *executor* agent works only inside the task-card
-boundary. Neither gains authority beyond what you granted.
-**Why:** a maker–checker loop that parallelizes safely; only **short, atomic, objectively
-verifiable** tasks are delegated, while judgment / long-context work stays with the controller.
-**Start:** `coop on` → `coop run <task>` for a well-bounded small task → controller reviews
-the actual diff and runs acceptance → `coop off`. (The switch is only a preference signal;
-it authorizes no writes, deletions, or external messaging.)
+### 🤝 `coop` — let different-brand AIs collaborate and cross-review
+**What:** let **local AI agents from different vendors** (e.g. Claude Code, Codex) work on one
+job together — one *controller* clarifies, plans, writes the task card, and dispatches; another
+agent (**deliberately a different model / brand**, e.g. Codex drafts, Claude Code reviews) runs
+it and returns a result, which the controller **independently reviews** and iterates over
+several rounds.
+**Why:** using a second, independent model to check the first **lowers the error rate and raises
+final quality**; only **short, atomic, objectively verifiable** tasks are delegated, judgment
+work stays with the controller, and neither agent gains authority beyond what you granted.
+**Dispatch mode (per task):** if a headless CLI can run it safely in a small directory →
+**run in a background terminal** and review the returned artifact; if it needs a rich client
+session / long context → don't force the background, **output a complete prompt and have you
+paste it into the right client**, then review what comes back.
+**Start:** `coop on` → `coop run <task>` → controller reviews the actual diff and runs
+acceptance → `coop off`. (The switch is only a preference signal; it authorizes no writes,
+deletions, or external messaging.)
 
-### ⏰ `defer-task` — a deferred local task
-**What:** schedule a shell command **you have approved** to run later, without expanding its
-authority (standard permission prompts still apply when it runs). Managed by the bundled,
-stdlib-only `deferctl.py`.
-**Why:** when time / quota isn't convenient, schedule it and it runs in the chosen directory
-on time; fully trackable via list / status / cancel.
+### ⏰ `defer-task` — a countdown executor for continuation
+**What:** schedule a shell command **you have approved** to run later (standard permission
+prompts still apply when it runs). Managed by the bundled, stdlib-only `deferctl.py`.
+**Why:** (1) agent sessions often pause at a **~5-hour usage limit** — schedule the resume
+command to fire after the window resets so work continues on its own; (2) when another agent is
+still running and you must start only after it finishes, schedule the follow-up by estimated
+time (**time-based countdown, not event-based waiting** — leave margin); (3) queue long or
+inconvenient commands for later. Fully trackable via list / status / cancel; never expands the
+command's authority.
 **Start:**
 ```bash
 python3 <SKILL_DIR>/deferctl.py schedule --delay 2h30m --cwd <PROJECT_ROOT> --cmd '<CMD>' --label '<LABEL>'
@@ -193,14 +209,17 @@ N entries verbatim**, fold older ones into a digest, and **archive the full old 
 items, and recoverability are all preserved.
 **Start:** `handoff-compact --dir=<PROJECT_ROOT> --keep=5 --threshold=120` (exits if below threshold).
 
-### 🌙 `overnight` — bounded unattended exploration
-**What:** while you're away, let an agent continue safe, traceable exploration, verification,
-and reporting within **explicit write / network / download / stop boundaries**, and hand you
+### 🌙 `overnight` — keep working safely while you sleep or step away
+**What:** grounded in your **stated goals and global / project memory**, do one of two things
+while you're asleep or away: **explore** (brainstorm topics, vet candidates) or **finish a
+long-running task**. It starts on its own after clarifying permissions and goal, and hands you
 a morning deliverable plus a blocker list.
-**Why:** freeze allowed / forbidden actions first, then work; generate candidates → novelty
-and source checks → preregister the comparison → implement lightly, recording inputs /
-commands / output paths at every step. Never commits, publishes, deletes, or installs
-system-wide without authority.
+**Why:** freeze allowed / forbidden actions and network / download limits first, then work;
+candidates → novelty and source checks → preregister the comparison → implement lightly,
+recording inputs / commands / output paths at every step. When interrupted by a **5-hour limit,
+a machine sleep, or a long runtime**, it **automatically uses `defer-task` to schedule a resume
+within the same frozen scope** and to write the morning report; it **never commits, publishes,
+deletes, or installs important files without authority**.
 **Start:** confirm three things up front (goal & exclusions / authorized write directory /
 network & download allowance); otherwise it stays read-only.
 
